@@ -26,5 +26,7 @@ data class OutboxEventEntity(
         @Type(type = "jsonb")
         @Column(name = "payload", nullable = false, columnDefinition = "jsonb")
         val payload: String,
-        val type: String
+        val type: String,
+        @Column(name = "trace_id", nullable = false)
+        val traceId: String = ""
 )
