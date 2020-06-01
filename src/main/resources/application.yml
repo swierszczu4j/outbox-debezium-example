@@ -3,14 +3,19 @@ spring:
     name: example-app
   datasource:
     driver-class-name: org.postgresql.Driver
-    username: username
-    password: password
-    url: jdbc:postgresql://localhost/example-databse
+    username: postgres
+    password: postgres
+    url: jdbc:postgresql://localhost/example-database
   jpa:
     properties:
       hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
-    hibernate:
-      ddl-auto: create
     open-in-view: false
+  kafka:
+    bootstrap-servers: localhost:9093,localhost:9094,localhost:9095
+    consumer:
+      group-id: example-consumer-group-id
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
 example.topic-name: example.topic

@@ -16,7 +16,7 @@ class ExampleEventService(
 ) {
 
     fun publishEvent(event: ExampleEvent) {
-        val traceId = B3SingleFormat.writeB3SingleFormatWithoutParentId(tracer.currentSpan().context())
+        val traceId = B3SingleFormat.writeB3SingleFormat(tracer.currentSpan().context())
         val outboxEvent = OutboxEventEntity(
                 destinationTopic = exampleTopicName,
                 aggregateId = event.exampleId,

@@ -20,7 +20,7 @@
         <hibernate-types-52.version>2.9.10</hibernate-types-52.version>
         <sleuth.version>2.2.2.RELEASE</sleuth.version>
 
-        <testcontainers.version>1.14.1</testcontainers.version>
+        <testcontainers.version>1.14.3</testcontainers.version>
         <debezium.version>1.1.1.Final</debezium.version>
     </properties>
 
@@ -62,6 +62,10 @@
             <groupId>com.vladmihalcea</groupId>
             <artifactId>hibernate-types-52</artifactId>
             <version>${hibernate-types-52.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
         </dependency>
 
         <dependency>
