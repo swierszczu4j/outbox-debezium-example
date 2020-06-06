@@ -1,14 +1,14 @@
-{
-  "name": "outbox-connector",
-  "config": {
+curl -X PUT 'http://localhost:8083/connectors/outbox-connector/config' \
+-H 'Content-Type: application/json' \
+-d '{
     "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
     "plugin.name": "pgoutput",
     "tasks.max": "1",
-    "database.hostname": "${postgresContainer.containerInfo.config.hostName}",
-    "database.port": "${postgresContainer.exposedPorts[0]}",
-    "database.user": "${postgresContainer.username}",
-    "database.password": "${postgresContainer.password}",
-    "database.dbname" : "${postgresContainer.databaseName}",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "postgres",
+    "database.password": "postgres",
+    "database.dbname" : "example-database",
     "database.server.name": "outbox-test-postgres-server",
     "schema.whitelist": "public",
     "table.whitelist" : "public.outbox_event",
@@ -18,9 +18,8 @@
     "transforms.outbox.route.by.field" : "destination_topic",
     "transforms.outbox.table.field.event.key":  "aggregate_id",
     "transforms.outbox.table.field.event.payload.id": "aggregate_id",
-    "transforms.outbox.route.topic.replacement" : "${routeByValue}",
-    "transforms.outbox.table.fields.additional.placement": "type:header:eventType",
+    "transforms.outbox.route.topic.replacement" : "${routedByValue}",
+    "transforms.outbox.table.fields.additional.placement": "type:header:eventType,trace_id:header:b3",
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
     "value.converter": "org.apache.kafka.connect.storage.StringConverter"
-  }
-}
+  }'
