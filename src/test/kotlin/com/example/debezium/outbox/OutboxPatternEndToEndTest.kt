@@ -2,6 +2,7 @@ package com.example.debezium.outbox
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.debezium.testing.testcontainers.Connector
+import io.debezium.testing.testcontainers.ConnectorConfiguration
 import io.debezium.testing.testcontainers.DebeziumContainer
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.consumer.KafkaConsumer
@@ -9,7 +10,6 @@ import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.kafka.common.serialization.UUIDDeserializer
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
-import org.awaitility.Awaitility
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -18,9 +18,6 @@ import org.skyscreamer.jsonassert.JSONCompareMode
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.http.HttpEntity
-import org.springframework.http.HttpHeaders
-import org.springframework.http.MediaType
 import org.springframework.kafka.test.utils.KafkaTestUtils
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -31,6 +28,7 @@ import org.testcontainers.containers.Network
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.containers.output.Slf4jLogConsumer
 import org.testcontainers.lifecycle.Startables
+import org.testcontainers.utility.DockerImageName
 import java.io.ByteArrayInputStream
 import java.nio.charset.Charset
 import java.util.*
@@ -43,15 +41,16 @@ import java.util.stream.Stream
  * https://github.com/debezium/debezium-examples/blob/master/testcontainers/src/test/java/io/debezium/examples/testcontainers/DebeziumContainerTest.java
  */
 @SpringBootTest(
-        classes = [
-            ExampleDebeziumOutboxApplication::class
-        ],
-        webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT)
+    classes = [
+        ExampleDebeziumOutboxApplication::class
+    ],
+    webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT
+)
 @TestConstructor(autowireMode = TestConstructor.AutowireMode.ALL)
 internal class OutboxPatternEndToEndTest(
-        private val objectMapper: ObjectMapper,
-        @Value("\${example.topic-name}")
-        private val exampleTopicName: String
+    private val objectMapper: ObjectMapper,
+    @Value("\${example.topic-name}")
+    private val exampleTopicName: String
 ) {
 
     private val restTemplate = RestTemplate()
@@ -72,8 +71,8 @@ internal class OutboxPatternEndToEndTest(
                     "database.password": "${postgresContainer.password}",
                     "database.dbname" : "${postgresContainer.databaseName}",
                     "database.server.name": "outbox-test-postgres-server",
-                    "schema.whitelist": "public",
-                    "table.whitelist" : "public.outbox_event",
+                    "schema.include.list": "public",
+                    "table.include.list" : "public.outbox_event",
                     "tombstones.on.delete" : "false",
                     "transforms" : "outbox",
                     "transforms.outbox.type" : "io.debezium.transforms.outbox.EventRouter",
@@ -105,7 +104,11 @@ internal class OutboxPatternEndToEndTest(
 
             val record = KafkaTestUtils.getSingleRecord(consumer, exampleTopicName, TimeUnit.SECONDS.toMillis(10))
             assertThat(record.key()).isEqualTo(exampleId)
-            JSONAssert.assertEquals(objectMapper.writeValueAsString(exampleEvent), record.value(), JSONCompareMode.LENIENT)
+            JSONAssert.assertEquals(
+                objectMapper.writeValueAsString(exampleEvent),
+                record.value(),
+                JSONCompareMode.LENIENT
+            )
             assertThatCode {
                 val b3Header = record.headers().headers("b3").single()
                 assertThat(String(b3Header.value())).isNotBlank()
@@ -117,34 +120,22 @@ internal class OutboxPatternEndToEndTest(
 
     private fun getConsumerForKafkaContainer(): KafkaConsumer<UUID, String> {
         return KafkaConsumer(
-                mapOf<String, Any>(
-                        ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG to kafkaContainer.bootstrapServers,
-                        ConsumerConfig.GROUP_ID_CONFIG to "test-group-${randomUUID()}",
-                        ConsumerConfig.AUTO_OFFSET_RESET_CONFIG to "earliest"
-                ),
-                UUIDDeserializer(),
-                StringDeserializer())
+            mapOf<String, Any>(
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG to kafkaContainer.bootstrapServers,
+                ConsumerConfig.GROUP_ID_CONFIG to "test-group-${randomUUID()}",
+                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG to "earliest"
+            ),
+            UUIDDeserializer(),
+            StringDeserializer()
+        )
     }
 
     private fun registerConnector(json: String) {
         val connector = Connector.fromJson(ByteArrayInputStream(json.toByteArray(Charset.forName("UTF-8"))))
-        registerDebeziumConnector(connector.toJson(), debeziumContainer.connectors)
-        Awaitility.await().atMost(10L, TimeUnit.SECONDS).until { isConnectorConfigured(connector.name) }
-    }
-
-    private fun registerDebeziumConnector(payload: String, fullUrl: String) {
-        val headers = HttpHeaders().apply {
-            contentType = MediaType.APPLICATION_JSON
-        }
-        if(!restTemplate.postForEntity(fullUrl, HttpEntity<String>(payload, headers), Any::class.java).statusCode.is2xxSuccessful) {
-            throw IllegalStateException("Connector not registered!")
-        }
-    }
-
-    private fun isConnectorConfigured(connectorName: String): Boolean {
-        return runCatching {
-            restTemplate.getForEntity(debeziumContainer.getConnector(connectorName), Any::class.java).statusCode.is2xxSuccessful
-        }.getOrElse { false }
+        val connectorConfiguration = ConnectorConfiguration.create()
+        val config = objectMapper.readTree(json).get("config")
+        config.fieldNames().forEach { connectorConfiguration.with(it, config.get(it).textValue()) }
+        debeziumContainer.registerConnector(connector.name, connectorConfiguration)
     }
 
     companion object {
@@ -169,23 +160,26 @@ internal class OutboxPatternEndToEndTest(
 
         private val network = Network.newNetwork()
 
-        private val kafkaContainer = KafkaContainer()
-                .withNetwork(network)
+        private val kafkaContainer = KafkaContainer(
+            DockerImageName
+                .parse("confluentinc/cp-kafka")
+                .withTag("5.4.2")
+        ).withNetwork(network)
 
         /**
          * Simple DebeziumPostgresContainer could've been used, but here's the plain one to show how to achieve it
          * in more production-like scenario.
          */
         private val postgresContainer = KotlinPostgreSQLContainer()
-                .withNetwork(network)
-                .withNetworkAliases("postgres")
-                .withCommand("postgres -c wal_level=logical")
+            .withNetwork(network)
+            .withNetworkAliases("postgres")
+            .withCommand("postgres -c wal_level=logical")
 
-        private val debeziumContainer = DebeziumContainer("1.1.1.Final")
-                .withNetwork(network)
-                .withKafka(kafkaContainer)
-                .withLogConsumer(Slf4jLogConsumer(logger))
-                .dependsOn(kafkaContainer)
+        private val debeziumContainer = DebeziumContainer("debezium/connect:1.6.2.Final")
+            .withNetwork(network)
+            .withKafka(kafkaContainer)
+            .withLogConsumer(Slf4jLogConsumer(logger))
+            .dependsOn(kafkaContainer)
     }
 
     private class KotlinPostgreSQLContainer : PostgreSQLContainer<KotlinPostgreSQLContainer>("postgres:11")
